@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'sfu-rust-port'",
+            "name": "Debug executable 'sfu-cli-uploader'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=sfu-rust-port",
-                    "--package=sfu-rust-port",
+                    "--bin=sfu-cli-uploader",
+                    "--package=sfu-cli-uploader",
                     "--release"
                 ],
                 "filter": {
-                    "name": "sfu-rust-port",
+                    "name": "sfu-cli-uploader",
                     "kind": "bin"
                 }
             },
@@ -30,16 +30,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'sfu-rust-port'",
+            "name": "Debug unit tests in executable 'sfu-cli-uploader'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=sfu-rust-port",
-                    "--package=sfu-rust-port"
+                    "--bin=sfu-cli-uploader",
+                    "--package=sfu-cli-uploader"
                 ],
                 "filter": {
-                    "name": "sfu-rust-port",
+                    "name": "sfu-cli-uploader",
                     "kind": "bin"
                 }
             },

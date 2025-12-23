@@ -191,7 +191,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sfu-rust-port"
+name = "sfu-cli-uploader"
 version = "0.1.0"
 dependencies = [
  "libloading",
