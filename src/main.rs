@@ -201,19 +201,24 @@ fn show_port_list() {
 
 fn write_all_serial(port: &mut dyn SerialPort, buf: &[u8]) -> io::Result<()> {
     let mut written = 0;
+    let deadline = Instant::now() + Duration::from_millis(5000);
+
     while written < buf.len() {
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "serial write stalled"));
+        }
+
         match port.write(&buf[written..]) {
             Ok(0) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "serial write returned 0 bytes",
-                ));
+                thread::yield_now();
             }
             Ok(n) => {
                 written += n;
             }
-            Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
-                continue;
+            Err(ref e) if e.kind() == io::ErrorKind::TimedOut
+                       || e.kind() == io::ErrorKind::WouldBlock
+                       || e.kind() == io::ErrorKind::Interrupted => {
+                thread::yield_now();
             }
             Err(e) => return Err(e),
         }
