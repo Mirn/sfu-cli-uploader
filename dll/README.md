@@ -1,4 +1,4 @@
-from USBXpressHostSDK\CP210x\Debug
+from USBXpressHostSDK\CP210x\Release
 
 Silicon Labs USBXpress Host SDK for USB bridge products for Windows
 
