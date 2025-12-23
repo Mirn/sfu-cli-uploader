@@ -1,0 +1,13 @@
+[package]
+name = "sfu-cli-uploader"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serialport = "4.3.0"
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.9.0"
+
+[target.'cfg(unix)'.dependencies]
+rusb = "0.9"
