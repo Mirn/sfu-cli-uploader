@@ -11,7 +11,8 @@ pub struct CmdConfig {
 
     pub info_only: bool,
     pub erase_only: bool,
-    pub start_log_only: bool,
+    
+    pub no_prewrite: bool,
 
     pub reset: Option<ResetSequence>,
 }
@@ -30,7 +31,7 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
 
     let mut info_only = false;
     let mut erase_only = false;
-    let mut start_log_only = false;
+    let mut no_prewrite = false;
 
     let mut reset: Option<ResetSequence> = None;
 
@@ -67,8 +68,8 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
             info_only = true;
         } else if arg == "--erase-only" {
             erase_only = true;
-        } else if arg == "--start-log-only" {
-            start_log_only = true;
+        } else if arg == "--no-prewrite" {
+            no_prewrite = true;
         } else if arg == "-r" || arg == "--reset" {
             if reset.is_some() {
                 eprintln!("Error: reset sequence specified more than once");
@@ -181,7 +182,7 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
     }
 
     // Check mandatory firmware file depending on context
-    let special_mode = info_only || erase_only || start_log_only;
+    let special_mode = info_only || erase_only;
     if firmware_path.is_none() && !special_mode {
         eprintln!("Error: firmware file is required unless --info-only/--erase-only/--start-log-only is specified");
         print_usage();
@@ -204,7 +205,7 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
         firmware_path,
         info_only,
         erase_only,
-        start_log_only,
+        no_prewrite,
         reset,
     })
 }
@@ -283,7 +284,7 @@ Options:
 
   --info-only             Query device info only, no firmware file required
   --erase-only            Erase only, no firmware file required
-  --start-log-only        Start log mode only, no firmware file required
+  --no-prewrite           Disabling sending data for writing while erasing is in progress
   --version               Print version / query device version only, no firmware file required
 
   -r, --reset <T> <MASK> <VAL> [VAL ...]

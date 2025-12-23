@@ -21,9 +21,16 @@
                 }
             },
             "args": [
+                // "-p", "\\??\\USB#VID_10C4&PID_EA60#PR2M0031#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
+                //"--info-only",
+                // "--erase-only",
+                // "--reset", "1", "3", "0x02", "0x00",
+
+
                 "C:\\Users\\sj21d\\Documents\\Pico-v1.5.1\\test\\payspot-tester\\build\\payspot_tester.page2bin",
                 "-p", "\\??\\USB#VID_10C4&PID_EA60#PR2M0031#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
                 "--reset", "1", "3", "0x02", "0x00",
+                //"--no-prewrite",
             ],
             "cwd": "${workspaceFolder}"
         },

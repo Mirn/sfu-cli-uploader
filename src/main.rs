@@ -168,7 +168,7 @@ fn write_all_serial(port: &mut dyn SerialPort, buf: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host:&mut u32, addr_shift:u32, fw_bin:&[u8]) {
+fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host:&mut u32, addr_shift:u32, fw_bin:&[u8], not_confirmed_wr:&mut usize) -> io::Result<()> {
     let start_index = (*wr_addr_host - addr_shift) as usize;
     let mut end_index = start_index + WR_BLOCK_SIZE;
     if end_index >= fw_bin.len() {
@@ -176,12 +176,15 @@ fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host
     }
 
     if start_index < end_index {
-        println!("{}\tHOST: send SFU_CMD_WRITE with address {:08X} size: {}", timeline.elapsed().as_millis(), wr_addr_host, end_index-start_index);
+        println!("{}\tHOST: send SFU_CMD_WRITE with address {:08X} size: {} used: {}", timeline.elapsed().as_millis(), wr_addr_host, end_index-start_index, not_confirmed_wr);
         let cmd_write = packet_build(SFU_CMD_WRITE, &bytes![
             serialize_u32!(*wr_addr_host), 
             &fw_bin[start_index .. end_index]]);
-        write_all_serial(&mut *port,&cmd_write);
         *wr_addr_host += WR_BLOCK_SIZE as u32;
+        *not_confirmed_wr += cmd_write.len();
+        return write_all_serial(&mut *port,&cmd_write);
+    } else {
+        return Ok(());
     }
 }
 
@@ -261,6 +264,10 @@ fn main() -> ExitCode {
     let mut last_mcu_addr = 0;
     let mut addr_shift = 0u32;
 
+    let mut not_confirmed_wr = 0;
+    let mut not_confirmed_max = 0x10000;
+    let mut write_actual_size = WR_BLOCK_SIZE;
+
     let mut run = true;
     while run && (Instant::now() < self_close) {
         if dev_info.is_none() && Instant::now() > timeout_info {
@@ -269,16 +276,35 @@ fn main() -> ExitCode {
             timeout_info = Instant::now() + Duration::from_millis(1000);
         }
 
-        if dev_info.is_some() && Instant::now() > timeout_erase && !erase_began && !erase_done {
+        if dev_info.is_some() && Instant::now() > timeout_erase && !erase_began && !erase_done && !write_done {
             println!("{}\tHOST: send SFU_CMD_ERASE", timeline.elapsed().as_millis());
-            port.write(&cmd_erase);
+            if params.erase_only {
+                if let Some(info) = &dev_info {
+                    let cmd_erase = packet_build(SFU_CMD_ERASE, &bytes![serialize_u32!(info.flash_size_correct)]);
+                    port.write(&cmd_erase).expect("Write ERROR");
+                } else {
+                    println!("{}\tERROR: There is no device info about flash erase size", timeline.elapsed().as_millis());
+                    run = false;
+                }
+
+            } else {
+                port.write(&cmd_erase).expect("Write ERROR");
+            }            
             timeout_erase = Instant::now() + Duration::from_millis(1000);
         }
 
-        if erase_done && Instant::now() > timeout_write {
-            send_write_command(&timeline, &mut *port, &mut wr_addr_host, addr_shift, &fw_bin);
-            timeout_write = Instant::now() + Duration::from_millis(100);
+        if ((erase_began && !params.no_prewrite) || erase_done) && Instant::now() > timeout_write && !write_done {
+            if (not_confirmed_wr + WR_BLOCK_SIZE*2) < not_confirmed_max {
+                let size_before = not_confirmed_wr;
+                send_write_command(&timeline, &mut *port, &mut wr_addr_host, addr_shift, &fw_bin, &mut not_confirmed_wr).expect("Write error!");
+                if write_actual_size == WR_BLOCK_SIZE {
+                    write_actual_size = not_confirmed_wr - size_before;
+                }
+            } else {
+                timeout_write = Instant::now() + Duration::from_millis(100);
+            }
         }
+
         if erase_done && write_done && Instant::now() > timeout_start {
             println!("{}\tHOST: send SFU_CMD_START", timeline.elapsed().as_millis());
             port.write(&cmd_start).expect("Write ERROR");
@@ -323,11 +349,6 @@ fn main() -> ExitCode {
                         println!("{}\tHOST: SFU INFO PARSING ERROR", timeline.elapsed().as_millis());                        
                         run = false;
                     }
-                    if params.start_log_only {
-                        erase_began = true;
-                        erase_done = true;
-                        write_done = true;
-                    }
                 };
 
                 while let Some(body) = packet.packets[SFU_CMD_ERASE_PART as usize].pop_front() {
@@ -344,14 +365,17 @@ fn main() -> ExitCode {
 
                 while let Some(body) = packet.packets[SFU_CMD_WRITE as usize].pop_front() {
                     let write_info = parse_write_info(body.as_slice());
-                    let status = if let Some(info) = &write_info {
+                    if let Some(info) = &write_info {
+                        if not_confirmed_wr < write_actual_size {
+                            not_confirmed_wr = 0
+                        } else {
+                            not_confirmed_wr -= write_actual_size;
+                        }                        
                         if last_mcu_addr == info.mcu_write_addr {
                             wr_addr_host = info.mcu_write_addr;
                             println!("{}\tHOST: Write address corrected at {:08X}", timeline.elapsed().as_millis(), wr_addr_host);
                             timeout_write = Instant::now() + Duration::from_millis(250);
-                            stat_wr_addr_errors += 1;
-                        } else {
-                            timeout_write = Instant::now();
+                            stat_write_resend_errors += 1;
                         }
                         last_mcu_addr = info.mcu_write_addr;                        
 
