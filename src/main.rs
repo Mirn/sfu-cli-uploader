@@ -38,6 +38,7 @@ const SFU_CMD_INFO   :u8 = 0x97;
 const SFU_CMD_ERASE  :u8 = 0xC5;
 const SFU_CMD_WRITE  :u8 = 0x38;
 const SFU_CMD_START  :u8 = 0x26;
+const SFU_CMD_SPEED  :u8 = 0x4B;
 const SFU_CMD_TIMEOUT:u8 = 0xAA;
 const SFU_CMD_WRERROR:u8 = 0x55;
 const SFU_CMD_HWRESET:u8 = 0x11;
@@ -86,8 +87,32 @@ pub fn parse_erase_info(body: &[u8]) -> Option<i32> {
     if body.len() < 4 {
         return None;
     }
-    let part_num       = deserialize_u32_le(body, 0) as i32;
+    let part_num = deserialize_u32_le(body, 0) as i32;
     Some(part_num)
+}
+
+#[derive(Debug, Clone)]
+pub struct SpeedChangeInfo {
+    pub old_bod: u32,
+    pub new_bod: u32,
+}
+
+pub enum SpeedInfo {
+    GET(u32),
+    CHANGE(SpeedChangeInfo),
+}
+
+pub fn parse_speed_info(body: &[u8]) -> Option<SpeedInfo> {
+    if body.len() == 4 {
+        let bod     = deserialize_u32_le(body, 0);
+        return Some(SpeedInfo::GET(bod));
+    } else if body.len() == 8 {
+        let old_bod     = deserialize_u32_le(body, 0);
+        let new_bod     = deserialize_u32_le(body, 4);
+        return Some(SpeedInfo::CHANGE(SpeedChangeInfo{old_bod:old_bod, new_bod:new_bod}));
+    } else {
+        return None;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +127,7 @@ pub fn parse_write_info(body: &[u8]) -> Option<WriteInfo> {
     }
 
     let mcu_write_addr     = deserialize_u32_le(body, 0);
-    let mcu_receive_count       = deserialize_u32_le(body, 4);
+    let mcu_receive_count  = deserialize_u32_le(body, 4);
 
     Some(WriteInfo {
         mcu_write_addr: mcu_write_addr,
@@ -245,6 +270,8 @@ fn main() -> ExitCode {
     let cmd_info = packet_build(SFU_CMD_INFO, &[]);
     let cmd_erase = packet_build(SFU_CMD_ERASE, &bytes![serialize_u32!(fw_bin.len() as u32)]);
     let cmd_start = packet_build(SFU_CMD_START, &bytes![serialize_u32!(fw_crc32)]);
+    let cmd_speed_get =  packet_build(SFU_CMD_SPEED, &[]);
+    let cmd_speed_set =  packet_build(SFU_CMD_SPEED, &bytes![serialize_u32!(2_000_000)]);
 
     let mut stat_write_resend_errors = 0;
 
@@ -254,11 +281,15 @@ fn main() -> ExitCode {
     let mut timeout_erase = Instant::now();
     let mut timeout_write = Instant::now();
     let mut timeout_start = Instant::now();
+    let mut timeout_speed_get = Instant::now();
+    let mut timeout_speed_set = Instant::now();
 
     let mut dev_info:Option<SfuInfo> = None;
     let mut erase_began = false;
     let mut erase_done = false;
     let mut write_done = false;
+    let mut speed_get_done = false;
+    let mut speed_set_done = false;
 
     let mut wr_addr_host = 0u32;    
     let mut last_mcu_addr = 0;
@@ -268,6 +299,9 @@ fn main() -> ExitCode {
     let mut not_confirmed_max = 0x10000;
     let mut write_actual_size = WR_BLOCK_SIZE;
 
+    let mut write_bulk_size = 0;
+    let     write_bulk_limit = 0x8000;
+
     let mut run = true;
     while run && (Instant::now() < self_close) {
         if dev_info.is_none() && Instant::now() > timeout_info {
@@ -276,7 +310,19 @@ fn main() -> ExitCode {
             timeout_info = Instant::now() + Duration::from_millis(1000);
         }
 
-        if dev_info.is_some() && Instant::now() > timeout_erase && !erase_began && !erase_done && !write_done {
+        if dev_info.is_some() && !erase_done && !erase_began && !write_done && Instant::now() > timeout_speed_get && !speed_get_done {
+            println!("{}\tHOST: send SFU_CMD_SPEED(get)", timeline.elapsed().as_millis());
+            port.write(&cmd_speed_get).expect("Write ERROR");
+            timeout_speed_get = Instant::now() + Duration::from_millis(1000);
+        }
+
+        if dev_info.is_some() && !erase_done && !erase_began && !write_done && Instant::now() > timeout_speed_set && speed_get_done && !speed_set_done {
+            println!("{}\tHOST: send SFU_CMD_SPEED(SET)", timeline.elapsed().as_millis());
+            port.write(&cmd_speed_set).expect("Write ERROR");
+            timeout_speed_set = Instant::now() + Duration::from_millis(1000);
+        }
+
+        if dev_info.is_some() && Instant::now() > timeout_erase && !erase_began && !erase_done && !write_done && speed_set_done && speed_get_done {
             println!("{}\tHOST: send SFU_CMD_ERASE", timeline.elapsed().as_millis());
             if params.erase_only {
                 if let Some(info) = &dev_info {
@@ -286,26 +332,28 @@ fn main() -> ExitCode {
                     println!("{}\tERROR: There is no device info about flash erase size", timeline.elapsed().as_millis());
                     run = false;
                 }
-
             } else {
                 port.write(&cmd_erase).expect("Write ERROR");
             }            
             timeout_erase = Instant::now() + Duration::from_millis(1000);
         }
 
-        if ((erase_began && !params.no_prewrite) || erase_done) && Instant::now() > timeout_write && !write_done {
-            if (not_confirmed_wr + WR_BLOCK_SIZE*2) < not_confirmed_max {
+        if Instant::now() > timeout_write && ((erase_began && !params.no_prewrite) || erase_done) &&  !write_done && speed_set_done && speed_get_done {
+            if ((not_confirmed_wr + write_actual_size*2) < not_confirmed_max) && 
+                ((write_bulk_size + write_actual_size*2) < write_bulk_limit) 
+            {
                 let size_before = not_confirmed_wr;
                 send_write_command(&timeline, &mut *port, &mut wr_addr_host, addr_shift, &fw_bin, &mut not_confirmed_wr).expect("Write error!");
                 if write_actual_size == WR_BLOCK_SIZE {
                     write_actual_size = not_confirmed_wr - size_before;
                 }
+                write_bulk_size += write_actual_size;
             } else {
                 timeout_write = Instant::now() + Duration::from_millis(100);
             }
         }
 
-        if erase_done && write_done && Instant::now() > timeout_start {
+        if erase_done && write_done && speed_set_done && speed_get_done && Instant::now() > timeout_start {
             println!("{}\tHOST: send SFU_CMD_START", timeline.elapsed().as_millis());
             port.write(&cmd_start).expect("Write ERROR");
             timeout_start = Instant::now() + Duration::from_millis(1000);
@@ -345,6 +393,11 @@ fn main() -> ExitCode {
                         addr_shift = info.main_start_from;
                         not_confirmed_max = info.receive_size as usize;
                         run = !params.info_only;
+
+                        if info.sfu_ver < 0x200 { //check not supported SFU_CMD_SPEED
+                            speed_get_done = true;
+                            speed_set_done = true;
+                        }
                     } else {
                         println!("{}\tHOST: SFU INFO PARSING ERROR", timeline.elapsed().as_millis());                        
                         run = false;
@@ -355,6 +408,7 @@ fn main() -> ExitCode {
                     let erase_part = parse_erase_info(body.as_slice());
                     println!("{}\tHOST: response to SFU_CMD_ERASE_PART was received: {:2X}:{:02X?}\t part = {}", timeline.elapsed().as_millis(), SFU_CMD_ERASE_PART, body.as_slice(), erase_part.unwrap_or(-1));
                     erase_began = true;
+                    write_bulk_size = 0;
                 };
 
                 while let Some(body) = packet.packets[SFU_CMD_ERASE as usize].pop_front() {
@@ -363,6 +417,31 @@ fn main() -> ExitCode {
                     run = !params.erase_only;
                 };
 
+                while let Some(body) = packet.packets[SFU_CMD_SPEED as usize].pop_front() {
+                    let speed_info = parse_speed_info(body.as_slice());
+                    if let Some(info) = &speed_info {
+                        match info {
+                            SpeedInfo::GET(v) => {
+                                println!("{}\tHOST: response to SFU_CMD_SPEED was received: {:2X}:{:02X?}\t current BOD = {v}", timeline.elapsed().as_millis(), SFU_CMD_SPEED, body.as_slice());
+                                timeout_speed_set = Instant::now();
+                                speed_get_done = true;
+                            }
+                            SpeedInfo::CHANGE (v) => {
+                                println!("{}\tHOST: response to SFU_CMD_SPEED was received: {:2X}:{:02X?}\t old_BOD = {}; New_BOD = {}", timeline.elapsed().as_millis(), SFU_CMD_SPEED, body.as_slice(), v.old_bod, v.new_bod);
+                                port.set_baud_rate(v.new_bod).expect("ERROR: port.set_baud_rate");
+                                println!("{}\tHOST: Baud rate changed to {} !", timeline.elapsed().as_millis(), v.new_bod);
+                                speed_set_done = true;
+                                speed_get_done = false;
+                                timeout_speed_get = Instant::now() + Duration::from_millis(1000);
+                            }
+                        };
+                    } else {
+                        run = false;
+                        println!("{}\tHOST: response to SFU_CMD_SPEED was received but parse ERROR, unknow format!", timeline.elapsed().as_millis());
+                    };                    
+                }
+
+
                 while let Some(body) = packet.packets[SFU_CMD_WRITE as usize].pop_front() {
                     let write_info = parse_write_info(body.as_slice());
                     if let Some(info) = &write_info {
@@ -370,7 +449,12 @@ fn main() -> ExitCode {
                             not_confirmed_wr = 0
                         } else {
                             not_confirmed_wr -= write_actual_size;
-                        }                        
+                        }
+                        if write_bulk_size < write_actual_size {
+                            write_bulk_size = 0
+                        } else {
+                            write_bulk_size -= write_actual_size;
+                        }
                         if last_mcu_addr == info.mcu_write_addr {
                             wr_addr_host = info.mcu_write_addr;
                             println!("{}\tHOST: Write address corrected at {:08X}", timeline.elapsed().as_millis(), wr_addr_host);
@@ -425,10 +509,6 @@ fn main() -> ExitCode {
 
         while let Some(str) = packet.logs.pop_front() {
             println!("{}\tDEVICE: {str}", timeline.elapsed().as_millis());
-        }
-
-        if timeline.elapsed().as_millis() > 100000 {
-            break;
         }
     }
 
