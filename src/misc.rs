@@ -43,6 +43,7 @@ pub fn tostr(vec:&[u8]) -> String {
     return res;
 }
 
+#[allow(dead_code)]
 pub fn spawn_stdin_channel() -> Receiver<String> {
     let (tx, rx) = mpsc::channel::<String>();
     thread::spawn(move || loop {
@@ -53,6 +54,7 @@ pub fn spawn_stdin_channel() -> Receiver<String> {
     rx
 }
 
+#[allow(dead_code)]
 pub fn strip_trailing_newline(input: &str) -> &str {
     input
     .strip_suffix("\r\n")

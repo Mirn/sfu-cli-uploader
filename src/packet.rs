@@ -140,9 +140,11 @@ pub trait PacketParserExt {
     fn receive_data(&mut self, data: &[u8]);
 
     /// Reset everything: state, logs, packets and statistics.
+    #[allow(dead_code)]
     fn reset(&mut self);
 
     /// Reset only error-related statistics.
+    #[allow(dead_code)]
     fn reset_error_stats(&mut self);
 
     /// Print a short summary of current statistics.

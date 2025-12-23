@@ -192,6 +192,7 @@ pub mod crc32 {
     /// is equivalent to:
     ///   crc32_IEEE8023(head + tail)
     /// where `previous_crc == crc32_IEEE8023(head)`.
+    #[allow(dead_code)]
     pub fn crc32_ieee8023_raw(previous_crc: u32, data: &[u8]) -> u32 {
         crc32_ieee_impl(previous_crc, data)
     }
@@ -200,6 +201,7 @@ pub mod crc32 {
     ///
     /// Initial CRC is 0. Final XOR is applied, so this returns the "final"
     /// CRC value.
+    #[allow(dead_code)]
     pub fn crc32_ieee8023(data: &[u8]) -> u32 {
         crc32_ieee_impl(0, data)
     }

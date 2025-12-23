@@ -1,6 +1,5 @@
+#![allow(non_camel_case_types)]
 use std::fmt;
-use std::time::Duration;
-use std::thread::sleep;
 
 #[derive(Debug, Clone)]
 pub struct ResetSequence {
@@ -51,7 +50,7 @@ pub fn cp210x_gpio_reset(port: &str, rst_seq: &ResetSequence) -> Result<GpioRese
 #[cfg(windows)]
 mod platform {
     use super::{GpioResetError, GpioResetStatus, ResetSequence};
-    use std::error::Error;
+    //use std::error::Error;
     use std::ffi::c_void;
     use std::fs::OpenOptions;
     use std::os::windows::io::AsRawHandle;
@@ -63,12 +62,12 @@ mod platform {
     type HANDLE = *mut c_void;
     type CP210x_STATUS = i32;
     const CP210X_SUCCESS: CP210x_STATUS = 0;
-    const CP210X_INVALID_HANDLE: CP210x_STATUS = 1;
-    const CP210X_DEVICE_IO_FAILED: CP210x_STATUS = 2;
-    const CP210X_FUNCTION_NOT_SUPPORTED: CP210x_STATUS = 3;
-    const CP210X_INVALID_PARAMETER: CP210x_STATUS = 4;
-    const CP210X_DEVICE_NOT_FOUND: CP210x_STATUS = 5;
-    const CP210X_INVALID_ACCESS_TYPE: CP210x_STATUS = 6;
+    // const CP210X_INVALID_HANDLE: CP210x_STATUS = 1;
+    // const CP210X_DEVICE_IO_FAILED: CP210x_STATUS = 2;
+    // const CP210X_FUNCTION_NOT_SUPPORTED: CP210x_STATUS = 3;
+    // const CP210X_INVALID_PARAMETER: CP210x_STATUS = 4;
+    // const CP210X_DEVICE_NOT_FOUND: CP210x_STATUS = 5;
+    // const CP210X_INVALID_ACCESS_TYPE: CP210x_STATUS = 6;
 
     // EscapeCommFunction codes (WinAPI)
     const SETRTS: u32 = 3;
