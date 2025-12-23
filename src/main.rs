@@ -1,8 +1,8 @@
-use std::env;
+//use std::env;
+//use std::fs::File;
 use std::time::{Duration, Instant};
 use std::io::{self, Write};
 use std::fs;
-use std::fs::File;
 use std::thread;
 use std::process::ExitCode;
 
@@ -51,7 +51,7 @@ pub struct SfuInfo {
     pub cpu_type: u32,
     pub flash_size_correct: u32,
     pub sfu_ver: u16,
-    pub receive_size: u32,
+    pub receive_size: usize,
     pub main_start_from: u32,
     pub main_run_from: u32,
     pub firmware_end_at: u32,
@@ -66,7 +66,7 @@ pub fn parse_sfu_info(body: &[u8], fw_len:u32) -> Option<SfuInfo> {
     let cpu_type       = deserialize_u32_le(body, 12);
     let flash_correct  = deserialize_u16_le(body, 16);
     let sfu_ver        = deserialize_u16_le(body, 18);
-    let receive_size   = deserialize_u32_le(body, 20);
+    let receive_size   = deserialize_u32_le(body, 20) as usize;
     let main_start     = deserialize_u32_le(body, 24);
     let main_run       = deserialize_u32_le(body, 28);
 
@@ -80,32 +80,6 @@ pub fn parse_sfu_info(body: &[u8], fw_len:u32) -> Option<SfuInfo> {
         main_run_from: main_run,
         firmware_end_at: (main_start + fw_len),
     })
-}
-
-pub fn print_sfu_info_unwrap(info: &Option<SfuInfo>) {
-    if let Some(info) = info  {
-        print_sfu_info(info);
-    } else {
-        println!("SFU INFO: NONE");
-    }
-}
-
-pub fn print_sfu_info(info: &SfuInfo) {
-    println!("--- SFU INFO ---");
-    print!("Device ID: [");
-    for b in info.device_id {
-        print!("{:02X} ", b);
-    }
-    println!("] {}", tostr(&info.device_id));
-
-    println!("CPU Type:            0x{:08X}", info.cpu_type);
-    println!("Flash Size Correct:  0x{:08x} {}", info.flash_size_correct, info.flash_size_correct);
-    println!("SFU Version:         {:04X}", info.sfu_ver);
-    println!("Receive Size:        {}", info.receive_size);
-    println!("MAIN_START_FROM:     0x{:08X}", info.main_start_from);
-    println!("MAIN_RUN_FROM:       0x{:08X}", info.main_run_from);
-    println!("firmware end at:     0x{:08X}", info.firmware_end_at);
-    println!("---------------------");
 }
 
 pub fn parse_erase_info(body: &[u8]) -> Option<i32> {
@@ -158,38 +132,6 @@ pub fn parse_start_info(body: &[u8]) -> Option<StartInfo> {
         mcu_crc32: mcu_crc32,
     })
 }
-// fn send_blocking(port: &mut dyn serialport::SerialPort, packet: &mut PacketParser, cmd:u8, data: &[u8], timeout_ms: u32) -> Option<Vec<u8>> {
-//     let _ = port.write(&packet_build(cmd, data));
-
-//     let mut runtime = Instant::now();
-//     let mut timeout:i32 = timeout_ms as i32;
-//     while timeout > runtime.elapsed().as_millis() as i32 {
-//         let mut serial_buf: Vec<u8> = vec![0; 0x10000];
-//         match port.read(serial_buf.as_mut_slice()) {
-//             Ok(t) => {
-//                 let read = &serial_buf[..t];
-//                 //println!("{:?}\t{:02X?}\t{}", runtime.elapsed(), read, tostr(read));
-//                 packet.receive_data(read);
-//                 while let Some(body) = packet.packets[cmd as usize].pop_front() {
-//                     println!("{:?}\t{:2X}:\t{:02X?}\t{}", runtime.elapsed(), cmd, body.as_slice(), tostr(body.as_slice()));
-//                     let info = parse_sfu_info(body.as_slice()).unwrap();
-//                     print_sfu_info(&info);
-//                     //return Some(body);
-//                 };
-//             },
-//             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
-//             },
-//             Err(e) => {
-//                 panic!("{:?}", e);            
-//             }
-//         }
-
-//         while let Some(str) = packet.logs.pop_front() {
-//             println!("LOG: {str}");
-//         }
-//     }
-//     return None;
-// }
 
 fn show_port_list() {
     println!("Available serial port list:");
@@ -244,7 +186,7 @@ fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host
 }
 
 fn main() -> ExitCode {
-    let mut timeline = Instant::now();
+    let timeline = Instant::now();
     let params = parse_cmdline_from_env();
     if params.is_none() {
         show_port_list();
@@ -301,9 +243,9 @@ fn main() -> ExitCode {
     let cmd_erase = packet_build(SFU_CMD_ERASE, &bytes![serialize_u32!(fw_bin.len() as u32)]);
     let cmd_start = packet_build(SFU_CMD_START, &bytes![serialize_u32!(fw_crc32)]);
 
-    let mut stat_wr_addr_errors = 0;
+    let mut stat_write_resend_errors = 0;
 
-    let mut self_close = Instant::now() + Duration::from_secs(10*60);;
+    let mut self_close = Instant::now() + Duration::from_secs(10*60);
 
     let mut timeout_info = Instant::now();
     let mut timeout_erase = Instant::now();
@@ -323,7 +265,7 @@ fn main() -> ExitCode {
     while run && (Instant::now() < self_close) {
         if dev_info.is_none() && Instant::now() > timeout_info {
             println!("{}\tHOST: send SFU_CMD_INFO", timeline.elapsed().as_millis());
-            port.write(&cmd_info);
+            port.write(&cmd_info).expect("Write ERROR");
             timeout_info = Instant::now() + Duration::from_millis(1000);
         }
 
@@ -334,25 +276,12 @@ fn main() -> ExitCode {
         }
 
         if erase_done && Instant::now() > timeout_write {
-            // let mut start_index = (wr_addr_host - addr_shift) as usize;
-            // let mut end_index = start_index + WR_BLOCK_SIZE;
-            // if end_index >= fw_bin.len() {
-            //     end_index = fw_bin.len()
-            // }
-            // if start_index < end_index {
-            //     println!("{}\tHOST: send SFU_CMD_WRITE with address {:08X}", timeline.elapsed().as_millis(), wr_addr_host);
-            //     let cmd_write = packet_build(SFU_CMD_WRITE, &bytes![
-            //         serialize_u32!(wr_addr_host), 
-            //         &fw_bin[start_index .. end_index]]);
-            //     write_all_serial(&mut *port,&cmd_write);
-            //     wr_addr_host += WR_BLOCK_SIZE as u32;
-            // }
             send_write_command(&timeline, &mut *port, &mut wr_addr_host, addr_shift, &fw_bin);
             timeout_write = Instant::now() + Duration::from_millis(100);
         }
         if erase_done && write_done && Instant::now() > timeout_start {
             println!("{}\tHOST: send SFU_CMD_START", timeline.elapsed().as_millis());
-            port.write(&cmd_start);
+            port.write(&cmd_start).expect("Write ERROR");
             timeout_start = Instant::now() + Duration::from_millis(1000);
         }
 
@@ -370,11 +299,35 @@ fn main() -> ExitCode {
                 while let Some(body) = packet.packets[SFU_CMD_INFO as usize].pop_front() {
                     println!("{}\tHOST: response to SFU_CMD_INFO was received: {:2X}:{:02X?}", timeline.elapsed().as_millis(), SFU_CMD_INFO, body.as_slice());
                     dev_info = parse_sfu_info(body.as_slice(), fw_bin.len() as u32);
-                    print_sfu_info_unwrap(&dev_info);
                     if let Some(info) = &dev_info {
+                        println!("{}\tHOST: --- SFU INFO ---", timeline.elapsed().as_millis());
+                        print!("{}\tHOST: Device ID: [", timeline.elapsed().as_millis());
+                        for b in info.device_id {
+                            print!("{:02X} ", b);
+                        }
+                        println!("] {}", tostr(&info.device_id));
+                        println!("{}\tHOST: CPU Type:            0x{:08X}", timeline.elapsed().as_millis() , info.cpu_type);
+                        println!("{}\tHOST: Flash Size Correct:  0x{:08x} {}", timeline.elapsed().as_millis(), info.flash_size_correct, info.flash_size_correct);
+                        println!("{}\tHOST: SFU Version:         {:04X}", timeline.elapsed().as_millis(), info.sfu_ver);
+                        println!("{}\tHOST: Receive Size:        {}", timeline.elapsed().as_millis(), info.receive_size);
+                        println!("{}\tHOST: MAIN_START_FROM:     0x{:08X}", timeline.elapsed().as_millis(), info.main_start_from);
+                        println!("{}\tHOST: MAIN_RUN_FROM:       0x{:08X}", timeline.elapsed().as_millis(), info.main_run_from);
+                        println!("{}\tHOST: firmware end at:     0x{:08X}", timeline.elapsed().as_millis(), info.firmware_end_at);
+                        println!("{}\tHOST: ---------------------", timeline.elapsed().as_millis());
+
                         wr_addr_host = info.main_start_from;
                         addr_shift = info.main_start_from;
-                    };
+                        not_confirmed_max = info.receive_size as usize;
+                        run = !params.info_only;
+                    } else {
+                        println!("{}\tHOST: SFU INFO PARSING ERROR", timeline.elapsed().as_millis());                        
+                        run = false;
+                    }
+                    if params.start_log_only {
+                        erase_began = true;
+                        erase_done = true;
+                        write_done = true;
+                    }
                 };
 
                 while let Some(body) = packet.packets[SFU_CMD_ERASE_PART as usize].pop_front() {
@@ -386,6 +339,7 @@ fn main() -> ExitCode {
                 while let Some(body) = packet.packets[SFU_CMD_ERASE as usize].pop_front() {
                     println!("{}\tHOST: response to SFU_CMD_ERASE was received: {:2X}:{:02X?} ERASE DONE", timeline.elapsed().as_millis(), SFU_CMD_ERASE, body.as_slice());
                     erase_done = true;
+                    run = !params.erase_only;
                 };
 
                 while let Some(body) = packet.packets[SFU_CMD_WRITE as usize].pop_front() {
@@ -460,11 +414,11 @@ fn main() -> ExitCode {
     println!("");
     packet.print_stats();
     println!("");
-    let mut stat_unhandled_cmds = 0;
+    let mut stat_unhandled_commands = 0;
     for cmd_code in &packet.packets {
-        stat_unhandled_cmds += cmd_code.len();
+        stat_unhandled_commands += cmd_code.len();
     }
-    println!("stat_wr_addr_errors: {stat_wr_addr_errors}");
-    println!("stat_unhandled_cmds: {stat_unhandled_cmds}");
+    println!("stat_write_resend_errors: {stat_write_resend_errors}");
+    println!("stat_unhandled_commands:  {stat_unhandled_commands}");
     return ExitCode::from(0);
 }
