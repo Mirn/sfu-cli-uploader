@@ -275,7 +275,7 @@ fn main() -> ExitCode {
 
     let mut stat_write_resend_errors = 0;
 
-    let mut self_close = Instant::now() + Duration::from_secs(10*60);
+    let mut self_close = Instant::now() + Duration::from_secs(2*60);
 
     let mut timeout_info = Instant::now();
     let mut timeout_erase = Instant::now();
@@ -284,12 +284,16 @@ fn main() -> ExitCode {
     let mut timeout_speed_get = Instant::now();
     let mut timeout_speed_set = Instant::now();
 
+    let mut resend_timeout = Duration::from_millis(250);
+
     let mut dev_info:Option<SfuInfo> = None;
     let mut erase_began = false;
     let mut erase_done = false;
     let mut write_done = false;
     let mut speed_get_done = params.baud_main == params.baud_init;
     let mut speed_set_done = speed_get_done;
+
+    let mut speed_get_attempts = 4;
 
     let mut wr_addr_host = 0u32;    
     let mut last_mcu_addr = 0;
@@ -311,9 +315,15 @@ fn main() -> ExitCode {
         }
 
         if dev_info.is_some() && !erase_done && !erase_began && !write_done && Instant::now() > timeout_speed_get && !speed_get_done {
-            println!("{}\tHOST: send SFU_CMD_SPEED(get)", timeline.elapsed().as_millis());
-            port.write(&cmd_speed_get).expect("Write ERROR");
-            timeout_speed_get = Instant::now() + Duration::from_millis(1000);
+            if speed_get_attempts > 0 {
+                println!("{}\tHOST: send SFU_CMD_SPEED(get)", timeline.elapsed().as_millis());
+                port.write(&cmd_speed_get).expect("Write ERROR");
+                timeout_speed_get = Instant::now() + Duration::from_millis(300);
+                speed_get_attempts -= 1;
+            } else {
+                speed_get_done = true;
+                speed_set_done = true;
+            }
         }
 
         if dev_info.is_some() && !erase_done && !erase_began && !write_done && Instant::now() > timeout_speed_set && speed_get_done && !speed_set_done {
@@ -432,7 +442,7 @@ fn main() -> ExitCode {
                                 println!("{}\tHOST: Baud rate changed to {} !", timeline.elapsed().as_millis(), v.new_bod);
                                 speed_set_done = true;
                                 speed_get_done = false;
-                                timeout_speed_get = Instant::now() + Duration::from_millis(1000);
+                                timeout_speed_get = Instant::now() + Duration::from_millis(300);
                             }
                         };
                     } else {
@@ -445,20 +455,17 @@ fn main() -> ExitCode {
                 while let Some(body) = packet.packets[SFU_CMD_WRITE as usize].pop_front() {
                     let write_info = parse_write_info(body.as_slice());
                     if let Some(info) = &write_info {
+                        write_bulk_size = 0;
                         if not_confirmed_wr < write_actual_size {
                             not_confirmed_wr = 0
                         } else {
                             not_confirmed_wr -= write_actual_size;
                         }
-                        if write_bulk_size < write_actual_size {
-                            write_bulk_size = 0
-                        } else {
-                            write_bulk_size -= write_actual_size;
-                        }
                         if last_mcu_addr == info.mcu_write_addr {
                             wr_addr_host = info.mcu_write_addr;
                             println!("{}\tHOST: Write address corrected at {:08X}", timeline.elapsed().as_millis(), wr_addr_host);
-                            timeout_write = Instant::now() + Duration::from_millis(250);
+                            timeout_write = Instant::now() + resend_timeout;
+                            resend_timeout += resend_timeout;
                             stat_write_resend_errors += 1;
                         }
                         last_mcu_addr = info.mcu_write_addr;                        
