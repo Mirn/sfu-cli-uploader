@@ -255,7 +255,7 @@ fn main() -> ExitCode {
     
 
     println!("{}\tHOST: open port {}", timeline.elapsed().as_millis(), params.port);
-    let mut port: Box<dyn SerialPort> = serialport::new(params.port, params.baud)
+    let mut port: Box<dyn SerialPort> = serialport::new(params.port, params.baud_init)
         .timeout(Duration::from_millis(1))
         .open().expect("Failed to open port");
     // thread::sleep(Duration::from_millis(32));
@@ -271,7 +271,7 @@ fn main() -> ExitCode {
     let cmd_erase = packet_build(SFU_CMD_ERASE, &bytes![serialize_u32!(fw_bin.len() as u32)]);
     let cmd_start = packet_build(SFU_CMD_START, &bytes![serialize_u32!(fw_crc32)]);
     let cmd_speed_get =  packet_build(SFU_CMD_SPEED, &[]);
-    let cmd_speed_set =  packet_build(SFU_CMD_SPEED, &bytes![serialize_u32!(2_000_000)]);
+    let cmd_speed_set =  packet_build(SFU_CMD_SPEED, &bytes![serialize_u32!(params.baud_main)]);
 
     let mut stat_write_resend_errors = 0;
 
@@ -288,8 +288,8 @@ fn main() -> ExitCode {
     let mut erase_began = false;
     let mut erase_done = false;
     let mut write_done = false;
-    let mut speed_get_done = false;
-    let mut speed_set_done = false;
+    let mut speed_get_done = params.baud_main == params.baud_init;
+    let mut speed_set_done = speed_get_done;
 
     let mut wr_addr_host = 0u32;    
     let mut last_mcu_addr = 0;

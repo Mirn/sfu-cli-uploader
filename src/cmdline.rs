@@ -6,7 +6,8 @@ use super::reset::ResetSequence;
 #[derive(Debug, Clone)]
 pub struct CmdConfig {
     pub port: String,
-    pub baud: u32,
+    pub baud_init: u32,
+    pub baud_main: u32,
     pub firmware_path: Option<String>,
 
     pub info_only: bool,
@@ -26,7 +27,8 @@ pub fn parse_cmdline_from_env() -> Option<CmdConfig> {
 
 pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
     let mut port: Option<String> = None;
-    let mut baud: Option<u32> = None;
+    let mut baud_init: Option<u32> = None;
+    let mut baud_main: Option<u32> = None;
     let mut firmware_path: Option<String> = None;
 
     let mut info_only = false;
@@ -57,7 +59,40 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
                 return None;
             }
             match args[i].parse::<u32>() {
-                Ok(v) => baud = Some(v),
+                Ok(v) => {
+                    baud_init = Some(v);
+                    baud_main = Some(v);
+                }                    
+                Err(e) => {
+                    eprintln!("Error: invalid baud rate '{}': {e}", args[i]);
+                    print_usage();
+                    return None;
+                }
+            }
+        }else if arg == "-si" || arg == "--init-speed" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Error: -si/--init-speed requires an argument");
+                print_usage();
+                return None;
+            }
+            match args[i].parse::<u32>() {
+                Ok(v) => baud_init = Some(v),
+                Err(e) => {
+                    eprintln!("Error: invalid baud rate '{}': {e}", args[i]);
+                    print_usage();
+                    return None;
+                }
+            }
+        }else if arg == "-sm" || arg == "--main-speed" {
+            i += 1;
+            if i >= args.len() {
+                eprintln!("Error: -sm/--main-speed requires an argument");
+                print_usage();
+                return None;
+            }
+            match args[i].parse::<u32>() {
+                Ok(v) => baud_main = Some(v),
                 Err(e) => {
                     eprintln!("Error: invalid baud rate '{}': {e}", args[i]);
                     print_usage();
@@ -197,11 +232,13 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
     }
 
     let port = port.unwrap();
-    let baud = baud.unwrap_or(DEFAULT_BAUD);
+    let baud_init = baud_init.unwrap_or(DEFAULT_BAUD);
+    let baud_main = baud_main.unwrap_or(baud_init);
 
     Some(CmdConfig {
         port,
-        baud,
+        baud_init,
+        baud_main,
         firmware_path,
         info_only,
         erase_only,
@@ -279,8 +316,10 @@ fn print_usage() {
   sfu-cli-uploader [options] <firmware_file>
 
 Options:
-  -p, --port <PORT>       Serial port name (e.g. COM5, /dev/ttyUSB0)
-  -s, --speed <BAUD>      Baud rate (decimal), default {DEFAULT_BAUD} bod
+  -p, --port <PORT>        Serial port name (e.g. COM5, /dev/ttyUSB0)
+  -s, --speed <BAUD>       Baud rate (decimal) for booth speeds I/M, default {DEFAULT_BAUD} bod
+  -si, --init-speed <BAUD> Baud rate (decimal) for Initialization,  default {DEFAULT_BAUD} bod
+  -sm, --main-speed <BAUD> Baud rate (decimal) for Main uploading, default {DEFAULT_BAUD} bod
 
   --info-only             Query device info only, no firmware file required
   --erase-only            Erase only, no firmware file required
