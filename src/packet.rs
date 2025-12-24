@@ -142,6 +142,9 @@ pub trait PacketParserExt {
     /// Feed a block of bytes from UART/serial stream.
     fn receive_data(&mut self, data: &[u8]);
 
+    /// check timeouts
+    fn tick(&mut self);
+
     /// Reset everything: state, logs, packets and statistics.
     #[allow(dead_code)]
     fn reset(&mut self);
@@ -335,6 +338,10 @@ impl PacketParserExt for PacketParser {
         for &b in data {
             self.receive_byte(b);
         }
+        self.tick();
+    }
+
+    fn tick(&mut self) {
         if (self.current_log_line.len() > 0) && (Instant::now() > self.timeout_log) {
             self.logs.push_back(std::mem::take(&mut self.current_log_line));
             self.stat_log_lines += 1;

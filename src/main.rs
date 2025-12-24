@@ -43,8 +43,7 @@ const SFU_CMD_TIMEOUT:u8 = 0xAA;
 const SFU_CMD_WRERROR:u8 = 0x55;
 const SFU_CMD_HWRESET:u8 = 0x11;
 
-
-const WR_BLOCK_SIZE:usize = 0x800;
+const WR_BLOCK_SIZE:usize = 0x800; //must be a multiple of 256
 
 #[derive(Debug, Clone)]
 pub struct SfuInfo {
@@ -168,7 +167,7 @@ fn show_port_list() {
 
 fn write_all_serial(port: &mut dyn SerialPort, buf: &[u8]) -> io::Result<()> {
     let mut written = 0;
-    let deadline = Instant::now() + Duration::from_millis(5000);
+    let mut deadline = Instant::now() + Duration::from_millis(500);
 
     while written < buf.len() {
         if Instant::now() >= deadline {
@@ -181,6 +180,7 @@ fn write_all_serial(port: &mut dyn SerialPort, buf: &[u8]) -> io::Result<()> {
             }
             Ok(n) => {
                 written += n;
+                deadline = Instant::now() + Duration::from_millis(500);
             }
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut
                        || e.kind() == io::ErrorKind::WouldBlock
@@ -316,8 +316,9 @@ fn main() -> ExitCode {
     let mut write_actual_size = WR_BLOCK_SIZE;
 
     let mut write_bulk_size = 0;
-    let     write_bulk_limit = 0x8000;
+    let     write_bulk_limit = 0x8000; //TODO: fix it, read device extra info for example
 
+    let mut serial_buf: Vec<u8> = vec![0; 0x10000];
 
     let mut result = RESULT_HOST_TIMEOUT_ERROR;
     let mut run = true;
@@ -383,7 +384,6 @@ fn main() -> ExitCode {
             timeout_start = Instant::now() + Duration::from_millis(1000);
         }
 
-        let mut serial_buf: Vec<u8> = vec![0; 0x10000];
         match port.read(serial_buf.as_mut_slice()) {
             Ok(t) => {
                 let read = &serial_buf[..t];
@@ -453,7 +453,12 @@ fn main() -> ExitCode {
                             }
                             SpeedInfo::CHANGE (v) => {
                                 println!("{}\tHOST: response to SFU_CMD_SPEED was received: {:2X}:{:02X?}\t old_BOD = {}; New_BOD = {}", timeline.elapsed().as_millis(), SFU_CMD_SPEED, body.as_slice(), v.old_bod, v.new_bod);
+                                let _ = port.clear(serialport::ClearBuffer::Input);
+                                let _ = port.clear(serialport::ClearBuffer::Output);
                                 port.set_baud_rate(v.new_bod).expect("ERROR: port.set_baud_rate");
+                                sleep(Duration::from_millis(1));
+                                let _ = port.clear(serialport::ClearBuffer::Input);
+                                let _ = port.clear(serialport::ClearBuffer::Output);
                                 println!("{}\tHOST: Baud rate changed to {} !", timeline.elapsed().as_millis(), v.new_bod);
                                 speed_set_done = true;
                                 speed_get_done = false;
@@ -527,7 +532,7 @@ fn main() -> ExitCode {
                 }
             },
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
-                packet.receive_data(&[]); //for log timeouts checking, TODO: fix it
+                packet.tick(); //for log timeouts checking
             },
             Err(e) => {
                 panic!("{:?}", e);            
