@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use super::crc32::crc32::crc32_sfu; 
 
+//WARNING: packet SIZE MUST BE multiple of 4 for special CRC32 (reversed byte order inside dword)
+
 pub const PACKET_SIGN_TX: u32 = 0x817E_A345;
 pub const PACKET_SIGN_RX: u32 = 0x45A3_7E81;
 
@@ -21,9 +23,11 @@ const SIGNATURE_BYTES: [u8; 4] = [
 pub fn packet_build(code: u8, body: &[u8]) -> Vec<u8> {
 
     let size = body.len();
+    const HEADER_CRC: usize = 4 + 2 + 2 + 4; // 12
+    let full_size = size + HEADER_CRC;
     assert!(
-        size <= MAX_PACKET_SIZE,
-        "packet body too large: {} (max 65535)", size
+        full_size <= MAX_PACKET_SIZE,
+        "packet body too large: {} (max {MAX_PACKET_SIZE})", full_size
     );
 
     // 4 (sign) + 2 (code/code^FF) + 2 (len) + body + 4 (CRC)
@@ -238,8 +242,12 @@ impl PacketParserExt for PacketParser {
                     // Hard error: skip rest of minimal possible packet?
                     // Instead, treat as size/code error and skip minimal body+CRC.
                     self.stat_size_or_code_error_packets += 1;
-                    self.abort_current_packet();
-                    // We do not treat these bytes as logs, as they are part of a broken packet.
+                    //self.abort_current_packet(); // We do not treat these bytes as logs, as they are part of a broken packet.
+                    self.expected_size = 0;
+                    self.body_buf.clear();
+                    self.crc_pos = 0;
+                    self.state = ParseState::Skip { remaining: 2 }; // len_lo, len_hi                    
+
                 } else {
                     self.state = ParseState::HeaderLenLo;
                 }
@@ -260,7 +268,7 @@ impl PacketParserExt for PacketParser {
 
                 if (total_packet_size == 0) || 
                    (total_packet_size > MAX_PACKET_SIZE) ||
-                   (total_packet_size & 0x3 != 0)
+                   (total_packet_size & 0x3 != 0) //MUST BE multiple of 4 for special CRC32 (reversed byte order inside dword)
                 {
                     self.stat_size_or_code_error_packets += 1;
                     // We know how many bytes remain in this broken packet (body + CRC).

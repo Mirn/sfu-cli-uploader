@@ -215,8 +215,8 @@ fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host
 
 const RESULT_SUCCESS:u8 = 0;
 const RESULT_PARAM_ERROR:u8 = 2;
-const RESULT_RESET_ERROR:u8 = 3;
-const RESULT_FW_LOAD_ERROR:u8 = 4;
+const RESULT_FW_LOAD_ERROR:u8 = 3;
+const RESULT_RESET_ERROR:u8 = 4;
 const RESULT_HOST_TIMEOUT_ERROR:u8 = 5;
 const RESULT_DEVICE_TIMEOUT_ERROR:u8 = 10;
 const RESULT_ERASE_ERROR:u8 = 11;
@@ -233,20 +233,6 @@ fn main() -> ExitCode {
         return ExitCode::from(RESULT_PARAM_ERROR);
     }
     let params = params.unwrap();
-
-    //let mut log = File::create("log.txt").expect("creation failed");
-    
-    if let Some(rst_seq) = params.reset {
-        println!("{}\tHOST: reset begin", timeline.elapsed().as_millis());
-        match cp210x_gpio_reset(&params.port, &rst_seq) {
-            Ok(GpioResetStatus::UsedCp210x) => {println!("{}\tHOST: Reset done via CP210x GPIO latch", timeline.elapsed().as_millis());}
-            Ok(GpioResetStatus::UsedDtrRts) => {println!("{}\tHOST: Reset done via DTR/RTS", timeline.elapsed().as_millis());}
-            Err(e) => {
-                eprintln!("{}\tHOST: GPIO reset error: {e}", timeline.elapsed().as_millis());
-                return ExitCode::from(RESULT_RESET_ERROR);
-            }
-        }        
-    }
 
     let mut fw_bin = vec![];
     let mut fw_crc32 = 0u32;
@@ -265,6 +251,17 @@ fn main() -> ExitCode {
         println!("{}\tHOST: loaded {} (0x{:08X}) bytes, CRC32_SFU = 0x{:08X}", timeline.elapsed().as_millis(), fw_bin.len(), fw_bin.len(), fw_crc32);
     };
     
+    if let Some(rst_seq) = params.reset {
+        println!("{}\tHOST: reset begin", timeline.elapsed().as_millis());
+        match cp210x_gpio_reset(&params.port, &rst_seq) {
+            Ok(GpioResetStatus::UsedCp210x) => {println!("{}\tHOST: Reset done via CP210x GPIO latch", timeline.elapsed().as_millis());}
+            Ok(GpioResetStatus::UsedDtrRts) => {println!("{}\tHOST: Reset done via DTR/RTS", timeline.elapsed().as_millis());}
+            Err(e) => {
+                eprintln!("{}\tHOST: GPIO reset error: {e}", timeline.elapsed().as_millis());
+                return ExitCode::from(RESULT_RESET_ERROR);
+            }
+        }        
+    }
 
     println!("{}\tHOST: open port {}", timeline.elapsed().as_millis(), params.port);
     let mut port: Box<dyn SerialPort> = serialport::new(params.port, params.baud_init)
@@ -302,6 +299,7 @@ fn main() -> ExitCode {
     let mut erase_began = false;
     let mut erase_done = false;
     let mut write_done = false;
+    let mut start_done = false;
     let mut speed_get_done = params.baud_main == params.baud_init;
     let mut speed_set_done = speed_get_done;
 
@@ -485,27 +483,27 @@ fn main() -> ExitCode {
                         }
                         if last_mcu_addr == info.mcu_write_addr {
                             wr_addr_host = info.mcu_write_addr;
-                            println!("{}\tHOST: Write address corrected at {:08X}", timeline.elapsed().as_millis(), wr_addr_host);
+                            println!("{}\tHOST: Write address corrected at 0x{:08X}", timeline.elapsed().as_millis(), wr_addr_host);
                             timeout_write = Instant::now() + resend_timeout;
                             resend_timeout += Duration::from_millis(250);
                             stat_write_resend_errors += 1;
                         }
-                        last_mcu_addr = info.mcu_write_addr;                        
+                        last_mcu_addr = info.mcu_write_addr;
 
                         let status = format!("mcu_addr: 0x{:08X}, mcu_used: {}", info.mcu_write_addr, info.mcu_receive_count);
-                        println!("{}\tHOST: response to SFU_CMD_WRITE was received: {:2X}:{:02X?}\t{}", timeline.elapsed().as_millis(), SFU_CMD_WRITE, body.as_slice(), status);                        
+                        println!("{}\tHOST: response to SFU_CMD_WRITE was received: {:2X}:{:02X?}\t{}", timeline.elapsed().as_millis(), SFU_CMD_WRITE, body.as_slice(), status);
 
                         if let Some(dev_info) = &dev_info {
                             if info.mcu_write_addr == dev_info.firmware_end_at {
-                                write_done = true;                            
+                                write_done = true;
                                 println!("{}\tHOST: ================ Write done =================", timeline.elapsed().as_millis());
                             }
-                        }                        
+                        }
                     } else {
                         println!("{}\tHOST: response to SFU_CMD_WRITE was received but parse ERROR, unknow format!", timeline.elapsed().as_millis());
                         result = RESULT_PARSE_WRITE_ERROR;
                         run = false;
-                    };                    
+                    };
                 };
 
                 while let Some(body) = packet.packets[SFU_CMD_START as usize].pop_front() {
@@ -519,6 +517,7 @@ fn main() -> ExitCode {
                         println!("{}\tHOST: crc32 from file : 0x{:08X}", timeline.elapsed().as_millis(), fw_crc32);
                         self_close = Instant::now() + Duration::from_millis(500);
                         result = RESULT_SUCCESS;
+                        start_done = true;
                     };
                 }
                 while let Some(body) = packet.packets[SFU_CMD_WRERROR as usize].pop_front() {
@@ -564,6 +563,12 @@ fn main() -> ExitCode {
         if packet.current_log_line.len() != 0 {
             println!("WARNING: non finished device log line: {}", packet.current_log_line);
         }
+    }
+
+    if result == RESULT_HOST_TIMEOUT_ERROR {
+        println!("ERROR: HOST TIMEOUT!!!");
+    } else if !(write_done && erase_done && start_done && (result == RESULT_SUCCESS)) {
+        println!("WARNING: UPDATING NOT FINISHED!!!!");
     }
 
     let mut stat_unhandled_commands = 0;
