@@ -515,14 +515,26 @@ fn main() -> ExitCode {
     // thread::sleep(Duration::from_millis(64));
     // let _ = send_blocking(&mut *port, &mut packet, SFU_CMD_INFO, &[], 3000);
 
-    println!("");
-    packet.print_stats();
-    println!("");
+    if (packet.stat_crc_error_packets != 0) ||
+       (packet.stat_incomplete_bytes != 0) ||
+       (packet.stat_other_error_packets != 0) ||
+       (packet.stat_size_or_code_error_packets != 0) ||
+       (packet.stat_log_bytes == 0) ||
+       (packet.stat_log_lines == 0) ||
+       (packet.stat_valid_packets == 0)
+    {
+        println!("");
+        packet.print_stats();
+        println!("");
+    }
+
     let mut stat_unhandled_commands = 0;
     for cmd_code in &packet.packets {
         stat_unhandled_commands += cmd_code.len();
     }
-    println!("stat_write_resend_errors: {stat_write_resend_errors}");
-    println!("stat_unhandled_commands:  {stat_unhandled_commands}");
+    if (stat_unhandled_commands + stat_write_resend_errors) !=0 {
+        println!("WARNING: stat_write_resend_errors: {stat_write_resend_errors}");
+        println!("WARNING: stat_unhandled_commands:  {stat_unhandled_commands}");
+    }
     return ExitCode::from(0);
 }
