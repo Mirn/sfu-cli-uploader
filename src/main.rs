@@ -1,7 +1,7 @@
 //use std::env;
 //use std::fs::File;
 use std::time::{Duration, Instant};
-use std::io::{self, Write};
+use std::io::{self};
 use std::fs;
 use std::thread;
 use std::process::ExitCode;
@@ -310,14 +310,14 @@ fn main() -> ExitCode {
     while run && (Instant::now() < self_close) {
         if dev_info.is_none() && Instant::now() > timeout_info {
             println!("{}\tHOST: send SFU_CMD_INFO", timeline.elapsed().as_millis());
-            port.write(&cmd_info).expect("Write ERROR");
+            write_all_serial(&mut *port, &cmd_info).expect("Write ERROR");
             timeout_info = Instant::now() + Duration::from_millis(1000);
         }
 
         if dev_info.is_some() && !erase_done && !erase_began && !write_done && Instant::now() > timeout_speed_get && !speed_get_done {
             if speed_get_attempts > 0 {
                 println!("{}\tHOST: send SFU_CMD_SPEED(get)", timeline.elapsed().as_millis());
-                port.write(&cmd_speed_get).expect("Write ERROR");
+                write_all_serial(&mut *port, &cmd_speed_get).expect("Write ERROR");
                 timeout_speed_get = Instant::now() + Duration::from_millis(300);
                 speed_get_attempts -= 1;
             } else {
@@ -328,7 +328,7 @@ fn main() -> ExitCode {
 
         if dev_info.is_some() && !erase_done && !erase_began && !write_done && Instant::now() > timeout_speed_set && speed_get_done && !speed_set_done {
             println!("{}\tHOST: send SFU_CMD_SPEED(SET)", timeline.elapsed().as_millis());
-            port.write(&cmd_speed_set).expect("Write ERROR");
+            write_all_serial(&mut *port, &cmd_speed_set).expect("Write ERROR");
             timeout_speed_set = Instant::now() + Duration::from_millis(1000);
         }
 
@@ -337,13 +337,13 @@ fn main() -> ExitCode {
             if params.erase_only {
                 if let Some(info) = &dev_info {
                     let cmd_erase = packet_build(SFU_CMD_ERASE, &bytes![serialize_u32!(info.flash_size_correct)]);
-                    port.write(&cmd_erase).expect("Write ERROR");
+                    write_all_serial(&mut *port, &cmd_erase).expect("Write ERROR");
                 } else {
                     println!("{}\tERROR: There is no device info about flash erase size", timeline.elapsed().as_millis());
                     run = false;
                 }
             } else {
-                port.write(&cmd_erase).expect("Write ERROR");
+                write_all_serial(&mut *port, &cmd_erase).expect("Write ERROR");
             }            
             timeout_erase = Instant::now() + Duration::from_millis(1000);
         }
@@ -365,7 +365,7 @@ fn main() -> ExitCode {
 
         if erase_done && write_done && speed_set_done && speed_get_done && Instant::now() > timeout_start {
             println!("{}\tHOST: send SFU_CMD_START", timeline.elapsed().as_millis());
-            port.write(&cmd_start).expect("Write ERROR");
+            write_all_serial(&mut *port, &cmd_start).expect("Write ERROR");
             timeout_start = Instant::now() + Duration::from_millis(1000);
         }
 
