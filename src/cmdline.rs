@@ -219,7 +219,7 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
     // Check mandatory firmware file depending on context
     let special_mode = info_only || erase_only;
     if firmware_path.is_none() && !special_mode {
-        eprintln!("Error: firmware file is required unless --info-only/--erase-only/--start-log-only is specified");
+        eprintln!("Error: firmware file is required unless --info-only/--erase-only is specified");
         print_usage();
         return None;
     }

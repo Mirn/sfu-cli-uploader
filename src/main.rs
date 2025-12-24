@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 use std::io::{self};
 use std::fs;
-use std::thread;
+use std::thread::{self, sleep};
 use std::process::ExitCode;
 
 use serialport::SerialPort;
@@ -193,7 +193,7 @@ fn write_all_serial(port: &mut dyn SerialPort, buf: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host:&mut u32, addr_shift:u32, fw_bin:&[u8], not_confirmed_wr:&mut usize) -> io::Result<()> {
+fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host:&mut u32, addr_shift:u32, fw_bin:&[u8], inflight_bytes_estimate:&mut usize) -> io::Result<()> {
     let start_index = (*wr_addr_host - addr_shift) as usize;
     let mut end_index = start_index + WR_BLOCK_SIZE;
     if end_index >= fw_bin.len() {
@@ -201,12 +201,12 @@ fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host
     }
 
     if start_index < end_index {
-        println!("{}\tHOST: send SFU_CMD_WRITE with address {:08X} size: {} used: {}", timeline.elapsed().as_millis(), wr_addr_host, end_index-start_index, not_confirmed_wr);
+        println!("{}\tHOST: send SFU_CMD_WRITE with address {:08X} size: {} used: {}", timeline.elapsed().as_millis(), wr_addr_host, end_index-start_index, inflight_bytes_estimate);
         let cmd_write = packet_build(SFU_CMD_WRITE, &bytes![
             serialize_u32!(*wr_addr_host), 
             &fw_bin[start_index .. end_index]]);
-        *wr_addr_host += WR_BLOCK_SIZE as u32;
-        *not_confirmed_wr += cmd_write.len();
+        *wr_addr_host += (end_index - start_index) as u32;
+        *inflight_bytes_estimate += cmd_write.len();
         return write_all_serial(&mut *port,&cmd_write);
     } else {
         return Ok(());
@@ -311,8 +311,8 @@ fn main() -> ExitCode {
     let mut last_mcu_addr = 0;
     let mut addr_shift = 0u32;
 
-    let mut not_confirmed_wr = 0;
-    let mut not_confirmed_max = 0x10000;
+    let mut inflight_bytes_estimate = 0;
+    let mut inflight_bytes_limit = 0x10000;
     let mut write_actual_size = WR_BLOCK_SIZE;
 
     let mut write_bulk_size = 0;
@@ -355,6 +355,7 @@ fn main() -> ExitCode {
                     write_all_serial(&mut *port, &cmd_erase).expect("Write ERROR");
                 } else {
                     println!("{}\tERROR: There is no device info about flash erase size", timeline.elapsed().as_millis());
+                    result = RESULT_ERASE_ERROR;
                     run = false;
                 }
             } else {
@@ -364,17 +365,17 @@ fn main() -> ExitCode {
         }
 
         if Instant::now() > timeout_write && ((erase_began && !params.no_prewrite) || erase_done) &&  !write_done && speed_set_done && speed_get_done {
-            if ((not_confirmed_wr + write_actual_size*2) < not_confirmed_max) && 
+            if ((inflight_bytes_estimate + write_actual_size*2) < inflight_bytes_limit) && 
                 ((write_bulk_size + write_actual_size*2) < write_bulk_limit) 
             {
-                let size_before = not_confirmed_wr;
-                send_write_command(&timeline, &mut *port, &mut wr_addr_host, addr_shift, &fw_bin, &mut not_confirmed_wr).expect("Write error!");
+                let size_before = inflight_bytes_estimate;
+                send_write_command(&timeline, &mut *port, &mut wr_addr_host, addr_shift, &fw_bin, &mut inflight_bytes_estimate).expect("Write error!");
                 if write_actual_size == WR_BLOCK_SIZE {
-                    write_actual_size = not_confirmed_wr - size_before;
+                    write_actual_size = inflight_bytes_estimate - size_before;
                 }
                 write_bulk_size += write_actual_size;
             } else {
-                timeout_write = Instant::now() + Duration::from_millis(100);
+                timeout_write = Instant::now() + Duration::from_millis(10);
             }
         }
 
@@ -415,7 +416,7 @@ fn main() -> ExitCode {
 
                         wr_addr_host = info.main_start_from;
                         addr_shift = info.main_start_from;
-                        not_confirmed_max = info.receive_size as usize;
+                        inflight_bytes_limit = info.receive_size as usize;
                         run = !params.info_only;
 
                         if info.sfu_ver < 0x200 { //check not supported SFU_CMD_SPEED
@@ -477,16 +478,16 @@ fn main() -> ExitCode {
                     let write_info = parse_write_info(body.as_slice());
                     if let Some(info) = &write_info {
                         write_bulk_size = 0;
-                        if not_confirmed_wr < write_actual_size {
-                            not_confirmed_wr = 0
+                        if inflight_bytes_estimate < write_actual_size {
+                            inflight_bytes_estimate = 0
                         } else {
-                            not_confirmed_wr -= write_actual_size;
+                            inflight_bytes_estimate -= write_actual_size;
                         }
                         if last_mcu_addr == info.mcu_write_addr {
                             wr_addr_host = info.mcu_write_addr;
                             println!("{}\tHOST: Write address corrected at {:08X}", timeline.elapsed().as_millis(), wr_addr_host);
                             timeout_write = Instant::now() + resend_timeout;
-                            resend_timeout += resend_timeout;
+                            resend_timeout += Duration::from_millis(250);
                             stat_write_resend_errors += 1;
                         }
                         last_mcu_addr = info.mcu_write_addr;                        
@@ -501,8 +502,9 @@ fn main() -> ExitCode {
                             }
                         }                        
                     } else {
-                        run = false;
                         println!("{}\tHOST: response to SFU_CMD_WRITE was received but parse ERROR, unknow format!", timeline.elapsed().as_millis());
+                        result = RESULT_PARSE_WRITE_ERROR;
+                        run = false;
                     };                    
                 };
 
