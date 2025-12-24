@@ -213,12 +213,24 @@ fn send_write_command(timeline:&Instant, port: &mut dyn SerialPort, wr_addr_host
     }
 }
 
+const RESULT_SUCCESS:u8 = 0;
+const RESULT_PARAM_ERROR:u8 = 2;
+const RESULT_RESET_ERROR:u8 = 3;
+const RESULT_FW_LOAD_ERROR:u8 = 4;
+const RESULT_HOST_TIMEOUT_ERROR:u8 = 5;
+const RESULT_DEVICE_TIMEOUT_ERROR:u8 = 10;
+const RESULT_ERASE_ERROR:u8 = 11;
+const RESULT_INFO_ERROR:u8 = 12;
+const RESULT_PARSE_WRITE_ERROR:u8 = 13;
+const RESULT_DEVICE_WRITE_ERROR:u8 = 14;
+const RESULT_SPEED_ERROR:u8 = 15;
+
 fn main() -> ExitCode {
     let timeline = Instant::now();
     let params = parse_cmdline_from_env();
     if params.is_none() {
         show_port_list();
-        return ExitCode::from(255);
+        return ExitCode::from(RESULT_PARAM_ERROR);
     }
     let params = params.unwrap();
 
@@ -231,7 +243,7 @@ fn main() -> ExitCode {
             Ok(GpioResetStatus::UsedDtrRts) => {println!("{}\tHOST: Reset done via DTR/RTS", timeline.elapsed().as_millis());}
             Err(e) => {
                 eprintln!("{}\tHOST: GPIO reset error: {e}", timeline.elapsed().as_millis());
-                return ExitCode::from(255);
+                return ExitCode::from(RESULT_RESET_ERROR);
             }
         }        
     }
@@ -247,7 +259,7 @@ fn main() -> ExitCode {
             bin
         } else {
             eprintln!("{}\tHOST: load error", timeline.elapsed().as_millis());
-            return ExitCode::from(255);
+            return ExitCode::from(RESULT_FW_LOAD_ERROR);
         };
         fw_crc32 = crc32_sfu(&fw_bin);
         println!("{}\tHOST: loaded {} (0x{:08X}) bytes, CRC32_SFU = 0x{:08X}", timeline.elapsed().as_millis(), fw_bin.len(), fw_bin.len(), fw_crc32);
@@ -306,6 +318,8 @@ fn main() -> ExitCode {
     let mut write_bulk_size = 0;
     let     write_bulk_limit = 0x8000;
 
+
+    let mut result = RESULT_HOST_TIMEOUT_ERROR;
     let mut run = true;
     while run && (Instant::now() < self_close) {
         if dev_info.is_none() && Instant::now() > timeout_info {
@@ -410,6 +424,7 @@ fn main() -> ExitCode {
                         }
                     } else {
                         println!("{}\tHOST: SFU INFO PARSING ERROR", timeline.elapsed().as_millis());                        
+                        result = RESULT_INFO_ERROR;
                         run = false;
                     }
                 };
@@ -446,8 +461,9 @@ fn main() -> ExitCode {
                             }
                         };
                     } else {
-                        run = false;
                         println!("{}\tHOST: response to SFU_CMD_SPEED was received but parse ERROR, unknow format!", timeline.elapsed().as_millis());
+                        result = RESULT_SPEED_ERROR;
+                        run = false;
                     };                    
                 }
 
@@ -495,15 +511,18 @@ fn main() -> ExitCode {
                         println!("{}\tHOST: mcu actual crc32: 0x{:08X}", timeline.elapsed().as_millis(), info.mcu_crc32);
                         println!("{}\tHOST: crc32 from file : 0x{:08X}", timeline.elapsed().as_millis(), fw_crc32);
                         self_close = Instant::now() + Duration::from_millis(500);
+                        result = RESULT_SUCCESS;
                     };
                 }
                 while let Some(body) = packet.packets[SFU_CMD_WRERROR as usize].pop_front() {
                     println!("{}\tHOST: response to SFU_CMD_WRERROR was received: {:2X}:{:02X?}", timeline.elapsed().as_millis(), SFU_CMD_WRERROR, body.as_slice());
+                    result = RESULT_DEVICE_WRITE_ERROR;
                     run = false;
                 }
 
                 while let Some(body) = packet.packets[SFU_CMD_TIMEOUT as usize].pop_front() {
                     println!("{}\tHOST: response to SFU_CMD_TIMEOUT was received: {:2X}:{:02X?}", timeline.elapsed().as_millis(), SFU_CMD_TIMEOUT, body.as_slice());
+                    result = RESULT_DEVICE_TIMEOUT_ERROR;
                     run = false;
                 }
             },
@@ -548,5 +567,5 @@ fn main() -> ExitCode {
         println!("WARNING: stat_write_resend_errors: {stat_write_resend_errors}");
         println!("WARNING: stat_unhandled_commands:  {stat_unhandled_commands}");
     }
-    return ExitCode::from(0);
+    return ExitCode::from(result);
 }
