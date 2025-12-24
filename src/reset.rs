@@ -253,7 +253,7 @@ mod platform {
             }
         }
 
-        let mut handle = match handle_opt {
+        let handle = match handle_opt {
             Some(h) => h,
             None => return Ok(false), 
         };

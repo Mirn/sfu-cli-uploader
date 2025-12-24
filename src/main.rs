@@ -251,6 +251,10 @@ fn main() -> ExitCode {
         println!("{}\tHOST: loaded {} (0x{:08X}) bytes, CRC32_SFU = 0x{:08X}", timeline.elapsed().as_millis(), fw_bin.len(), fw_bin.len(), fw_crc32);
     };
     
+    let global_timout_sec = 2*60 + 2*((fw_bin.len()*10) / params.baud_main as usize);
+    let mut self_close = Instant::now() + Duration::from_secs(global_timout_sec as u64);
+    println!("{}\tHOST: setup host timeout {} sec ", timeline.elapsed().as_millis(), global_timout_sec);
+
     if let Some(rst_seq) = params.reset {
         println!("{}\tHOST: reset begin", timeline.elapsed().as_millis());
         match cp210x_gpio_reset(&params.port, &rst_seq) {
@@ -283,8 +287,6 @@ fn main() -> ExitCode {
     let cmd_speed_set =  packet_build(SFU_CMD_SPEED, &bytes![serialize_u32!(params.baud_main)]);
 
     let mut stat_write_resend_errors = 0;
-
-    let mut self_close = Instant::now() + Duration::from_secs(2*60);
 
     let mut timeout_info = Instant::now();
     let mut timeout_erase = Instant::now();
