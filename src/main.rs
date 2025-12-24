@@ -508,6 +508,7 @@ fn main() -> ExitCode {
                 }
             },
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
+                packet.receive_data(&[]); //for log timeouts checking, TODO: fix it
             },
             Err(e) => {
                 panic!("{:?}", e);            
@@ -533,6 +534,10 @@ fn main() -> ExitCode {
         println!("");
         packet.print_stats();
         println!("");
+
+        if packet.current_log_line.len() != 0 {
+            println!("WARNING: non finished device log line: {}", packet.current_log_line);
+        }
     }
 
     let mut stat_unhandled_commands = 0;

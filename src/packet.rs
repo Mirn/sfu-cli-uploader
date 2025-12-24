@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 use super::crc32::crc32::crc32_sfu; 
 
 pub const PACKET_SIGN_TX: u32 = 0x817E_A345;
@@ -89,10 +90,11 @@ pub struct PacketParser {
     /// Total number of completed log lines.
     pub stat_log_lines: u64,
 
+    pub current_log_line: String,
+
     // --- internal state ---
 
     state: ParseState,
-    current_log_line: String,
 
     current_code: u8,
     expected_size: usize,
@@ -103,6 +105,7 @@ pub struct PacketParser {
 
     /// Remaining bytes (body + CRC) for current packet once size is known.
     remaining_in_packet: usize,
+    timeout_log: Instant,
 }
 
 enum ParseState {
@@ -178,6 +181,7 @@ impl PacketParserExt for PacketParser {
             crc_pos: 0,
 
             remaining_in_packet: 0,
+            timeout_log: Instant::now() + Duration::from_millis(500),
         }
     }
 
@@ -331,6 +335,10 @@ impl PacketParserExt for PacketParser {
         for &b in data {
             self.receive_byte(b);
         }
+        if (self.current_log_line.len() > 0) && (Instant::now() > self.timeout_log) {
+            self.logs.push_back(std::mem::take(&mut self.current_log_line));
+            self.stat_log_lines += 1;
+        }
     }
 
     fn reset(&mut self) {
@@ -392,6 +400,7 @@ impl PacketParser {
     /// Handle a single log byte (non-packet data).
     fn handle_log_byte(&mut self, b: u8) {
         self.stat_log_bytes += 1;
+        self.timeout_log = Instant::now() + Duration::from_millis(250);
         match b {
             b'\n' => {
                 // End of line.
@@ -401,6 +410,10 @@ impl PacketParser {
             32..=126 => {
                 // Printable ASCII.
                 self.current_log_line.push(b as char);
+                if self.current_log_line.len() >= 256 {
+                    self.logs.push_back(std::mem::take(&mut self.current_log_line));
+                    self.stat_log_lines += 1;
+                }
             }
             b'\r' => {}
             b'\t' => {
