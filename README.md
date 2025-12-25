@@ -1,4 +1,4 @@
-# SFU CLI Uploader (RP2040)
+# SFU CLI Uploader (RP2040/STM32F4/STM32F7/STM32H7)
 
 A command-line firmware uploader for **RP2040** devices using a custom high-speed UART protocol and a dedicated bootloader (SFU).
 The tool is designed for **developers**, production flashing, and automated workflows — not for end users.
