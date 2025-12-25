@@ -33,16 +33,11 @@ This was achieved by optimizing the update protocol for modern UART USB chips su
 
 ---
 
-## How It Works (Short)
+## Requirements
 
-- The device runs a custom SFU bootloader
-- Firmware is transferred over UART in fixed-size blocks
-- The MCU buffers incoming data while flash erase is in progress
-- Data is written sequentially and verified with CRC32
-- The device rejects out-of-order or corrupted blocks
-- Final CRC check confirms the full image before execution
-
----
+ - RP2040 device with SFU bootloader installed
+ - UART connection (USB-UART adapter or on-board USB-UART bridge)
+ - Optional: CP210x for GPIO-based reset control
 
 ## Usage
 
@@ -81,11 +76,16 @@ cargo build --release
 
 No external build steps, no custom toolchains, no vendor SDKs required.
 
-## Requirements
+## How It Works (Short)
 
- - RP2040 device with SFU bootloader installed
- - UART connection (USB-UART adapter or on-board USB-UART bridge)
- - Optional: CP210x for GPIO-based reset control
+- The device runs a custom SFU bootloader
+- Firmware is transferred over UART in fixed-size blocks
+- The MCU buffers incoming data while flash erase is in progress
+- Data is written sequentially and verified with CRC32
+- The device rejects out-of-order or corrupted blocks
+- Final CRC check confirms the full image before execution
+
+---
 
 ## Notes
  - This tool prioritizes speed, determinism, and automation
