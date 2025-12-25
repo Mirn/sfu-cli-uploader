@@ -1,41 +1,22 @@
 # SFU CLI Uploader (RP2040/STM32F4/STM32F7/STM32H7)
 
 A command-line firmware uploader for **RP2040/STM32F4/STM32F7/STM32H7** devices using a custom high-speed UART protocol and a dedicated bootloader (SFU).
-The tool is designed for **developers**, production flashing, and automated workflows — not for end users.
+The tool is designed for **developers** and automated workflows — not for end users.
 
 ---
 
 ## Key Features
 
-- High-speed UART firmware upload (no USB MSC, no SWD required)
-- Custom streaming protocol with CRC32 verification
-- Upload during flash erase (pipelined write) to minimize total time
-- Robust handling of packet loss, resynchronization, and partial writes
+- Speed-optimized UART firmware upload (no USB MSC, no SWD required)
+- Only firmware update, NO reading and working with lock bits!
 - Supports GPIO-based reset via CP210x devices or classic RS-232 control lines
-- Human-readable device logs interleaved with binary protocol data
-- Fully scriptable CLI (exit codes, no GUI, no interactive prompts)
-
----
-
-## Performance for RP2040
-
-Typical flashing time for a **~1 MB firmware image**:
-
-| Method                         | Time (approx.) |
-|--------------------------------|----------------|
-| **SFU UART uploader (this tool)** | **~15 seconds** |
-| SWD + debug probe              | ~40 seconds    |
-| USB Mass Storage boot mode     | Significantly slower |
-
-In practice, this uploader is **several times faster** than standard RP2040 flashing methods, especially in production or iteration-heavy development workflows.
-
-This was achieved by optimizing the update protocol for modern UART USB chips such as CP2102n
+- Command line interface (exit codes, no GUI, no interactive prompts)
 
 ---
 
 ## Requirements
 
- - RP2040 or STM32 device with SFU bootloader installed
+ - RP2040 or STM32 device with SFU bootloader installed, (see Related Projects)
  - UART connection (USB-UART adapter or on-board USB-UART bridge)
  - Optional: CP210x for GPIO-based reset control
 
@@ -77,6 +58,22 @@ cargo build --release
 
 No external build steps, no custom toolchains, no vendor SDKs required.
 
+## Performance for RP2040
+
+Typical flashing time for a **~1 MB firmware image**:
+
+| Method                         | Time (approx.) |
+|--------------------------------|----------------|
+| **SFU UART uploader (this tool)** | **~15 seconds** |
+| SWD + debug probe              | ~40 seconds    |
+| USB Mass Storage boot mode     | Significantly slower |
+
+In practice, this uploader is **several times faster** than standard RP2040 flashing methods, especially in production or iteration-heavy development workflows.
+
+This was achieved by optimizing the update protocol for modern UART USB chips such as CP2102n
+
+---
+
 ## How It Works (Short)
 
 - The device runs a custom SFU bootloader
@@ -90,7 +87,7 @@ No external build steps, no custom toolchains, no vendor SDKs required.
 
 ## Notes
  - This tool prioritizes speed, determinism, and automation
- - Designed to be embedded into shell scripts, CI, and production flashing pipelines
+ - Designed to be embedded into shell scripts
 
 ## Related Projects
 
