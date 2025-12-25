@@ -29,6 +29,8 @@ Typical flashing time for a **~1 MB firmware image**:
 
 In practice, this uploader is **several times faster** than standard RP2040 flashing methods, especially in production or iteration-heavy development workflows.
 
+This was achieved by optimizing the update protocol for modern UART USB chips such as CP2102n
+
 ---
 
 ## How It Works (Short)
@@ -64,15 +66,16 @@ Options:
 
 Example:
 
-sfu-cli-uploader -p COM5 -s 1000000 firmware.bin
+sfu-cli-uploader -p COM5 -si 1000000 -sm 2000000 firmware.bin
 ```
 
 ## Build
 
 The project is a standard Rust CLI application.
 
+```
 cargo build --release
-
+```
 
 No external build steps, no custom toolchains, no vendor SDKs required.
 
@@ -86,3 +89,17 @@ No external build steps, no custom toolchains, no vendor SDKs required.
  - This tool prioritizes speed, determinism, and automation
  - Panic (exit code 101) is treated as a fatal host-side or hardware error
  - Designed to be embedded into shell scripts, CI, and production flashing pipelines
+
+## Related Projects
+
+- **https://github.com/Mirn/rp2040-SFU**  
+  RP2040 SFU UART bootloader implementing the device-side of this protocol.
+
+- **https://github.com/Mirn/Boot_F4_fast_uart**  
+  High-speed SFU UART bootloader for STM32F4 microcontrollers.
+
+- **https://github.com/Mirn/Boot_F745_SFU**  
+  SFU-style SFU UART bootloader for STM32F745 devices.
+
+- **https://github.com/Mirn/Boot_STM32H743_SFU_fast_uart**  
+  Fast UART SFU bootloader for STM32H743 MCUs.
