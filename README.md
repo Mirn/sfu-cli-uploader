@@ -63,7 +63,7 @@ Example:
 
 sfu-cli-uploader -p COM5 -si 1000000 -sm 2000000 firmware.bin --reset 1 3 0x02 0x00
 
-with reset by 0-1-0 pulse with 1ms step on second CP2102n/CP2103 GPIO.1 (bit 1), first GPIO.0 always 0
+will reset by 0-1-0 pulse with 1ms step on second CP2102n/CP2103 GPIO.1 (bit 1), first GPIO.0 always 0 for enter to bootloader begore updating
 ```
 
 ## Build
