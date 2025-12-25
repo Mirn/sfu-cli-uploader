@@ -85,10 +85,6 @@ This was achieved by optimizing the update protocol for modern UART USB chips su
 
 ---
 
-## Notes
- - This tool prioritizes speed, determinism, and automation
- - Designed to be embedded into shell scripts
-
 ## Related Projects
 
 - **https://github.com/Mirn/rp2040-SFU**  
