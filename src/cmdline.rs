@@ -226,7 +226,7 @@ pub fn parse_cmdline(args: &[String]) -> Option<CmdConfig> {
 
     // Check mandatory firmware file depending on context
     if port.is_none() {
-        eprintln!("Error: Serial port name is required unless is specified");
+        eprintln!("Error: serial port is required (with -p/--port)");
         print_usage();
         return None;
     }
@@ -311,6 +311,10 @@ fn normalize_port(raw: &str) -> String {
 }
 
 fn print_usage() {
+    const GIT_HASH: &str = env!("GIT_HASH");
+    const BUILD_TIME: &str = env!("BUILD_TIME");
+    const BUILD_PROFILE: &str = env!("BUILD_PROFILE");
+
     eprintln!(
         r#"Usage:
   sfu-cli-uploader [options] <firmware_file>
@@ -324,17 +328,19 @@ Options:
   --info-only             Query device info only, no firmware file required
   --erase-only            Erase only, no firmware file required
   --no-prewrite           Disabling sending data for writing while erasing is in progress
-  --version               Print version / query device version only, no firmware file required
 
   -r, --reset <T> <MASK> <VAL> [VAL ...]
       T       - GPIO quantum time, decimal (e.g. 50 = 50 ms)
       MASK    - GPIO mask, binary (0b...) or hex (0x... or plain hex, default hex)
-      VAL...  - at least two GPIO values, each in binary or hex (same rules)
+      VAL...  - at least two GPIO values, each in binary or hex (same rules)      
 
 Examples:
   sfu-cli-uploader -p COM5 -s 1000000 firmware.bin
   sfu-cli-uploader --port /dev/ttyUSB0 --info-only
   sfu-cli-uploader -p COM3 -r 50 0x0003 0b01 0b10 0b00 --erase-only
-"#
+  
+  commit: {}
+  build:  {} ({})
+"#, GIT_HASH, BUILD_TIME, BUILD_PROFILE
     );
 }

@@ -2,6 +2,7 @@ use std::{
     env,
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 fn copy_if_exists(src: &Path, dst_dir: &Path) -> Result<(), String> {
@@ -65,4 +66,41 @@ fn main() {
 
     // Optional: print where we copied for easier debugging in logs
     println!("cargo:warning=Copied CP210x DLLs from {} to {}", dll_dir.display(), exe_dir.display());
+
+    // --- Git commit hash (short) ---
+    let git_hash = Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    //let build_time = chrono_utc_now(); //if next line fails
+    let build_time = Command::new("date")
+        .args(["-u", "+%Y-%m-%d %H:%M:%S UTC"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+    println!("cargo:rustc-env=BUILD_TIME={}", build_time);
+    println!("cargo:rustc-env=BUILD_PROFILE={}", std::env::var("PROFILE").unwrap_or_default());
+
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs");
+}
+
+#[allow(dead_code)]
+fn chrono_utc_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    format!("{}", secs)
 }
