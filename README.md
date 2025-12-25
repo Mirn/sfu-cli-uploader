@@ -17,7 +17,7 @@ The tool is designed for **developers**, production flashing, and automated work
 
 ---
 
-## Performance
+## Performance for RP2040
 
 Typical flashing time for a **~1 MB firmware image**:
 
@@ -35,7 +35,7 @@ This was achieved by optimizing the update protocol for modern UART USB chips su
 
 ## Requirements
 
- - RP2040 device with SFU bootloader installed
+ - RP2040 or STM32 device with SFU bootloader installed
  - UART connection (USB-UART adapter or on-board USB-UART bridge)
  - Optional: CP210x for GPIO-based reset control
 
