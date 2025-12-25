@@ -11,8 +11,8 @@ The tool is designed for **developers**, production flashing, and automated work
 - Custom streaming protocol with CRC32 verification
 - Upload during flash erase (pipelined write) to minimize total time
 - Robust handling of packet loss, resynchronization, and partial writes
-- Supports GPIO-based reset via CP210x or classic RS-232 control lines
-- Human-readable device logs mixed with binary protocol data
+- Supports GPIO-based reset via CP210x devices or classic RS-232 control lines
+- Human-readable device logs interleaved with binary protocol data
 - Fully scriptable CLI (exit codes, no GUI, no interactive prompts)
 
 ---
@@ -63,7 +63,8 @@ Example:
 
 sfu-cli-uploader -p COM5 -si 1000000 -sm 2000000 firmware.bin --reset 1 3 0x02 0x00
 
-will reset by 0-1-0 pulse with 1ms step on second CP2102n/CP2103 GPIO.1 (bit 1), first GPIO.0 always 0 for enter to bootloader begore updating
+will reset the device using a 0–1–0 pulse sequence with a 1 ms step on second CP2102n/CP2103 GPIO.1 (bit 1),
+first GPIO.0 is kept low to enter the bootloader before updating.
 ```
 
 ## Build
@@ -89,7 +90,7 @@ No external build steps, no custom toolchains, no vendor SDKs required.
 
 ## Notes
  - This tool prioritizes speed, determinism, and automation
- - Panic (exit code 101) is treated as a fatal host-side or hardware error
+ - A panic (exit code 101) is treated as a fatal host-side or hardware error
  - Designed to be embedded into shell scripts, CI, and production flashing pipelines
 
 ## Related Projects
