@@ -90,7 +90,6 @@ No external build steps, no custom toolchains, no vendor SDKs required.
 
 ## Notes
  - This tool prioritizes speed, determinism, and automation
- - A panic (exit code 101) is treated as a fatal host-side or hardware error
  - Designed to be embedded into shell scripts, CI, and production flashing pipelines
 
 ## Related Projects
