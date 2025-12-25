@@ -74,14 +74,14 @@ This was achieved by optimizing the update protocol for modern UART USB chips su
 
 ---
 
-## How It Works (Short)
+## How It Works
 
-- The device runs a custom SFU bootloader
+- The device runs a custom SFU bootloader (usually after reset via GPIO/DTR/RTS or manual)
 - Firmware is transferred over UART in fixed-size blocks
 - The MCU buffers incoming data while flash erase is in progress
 - Data is written sequentially and verified with CRC32
-- The device rejects out-of-order or corrupted blocks
-- Final CRC check confirms the full image before execution
+- The device rejects out-of-order or corrupted blocks, and the host resend it again
+- Final CRC32 check confirms the full image before execution and starts new firmware
 
 ---
 
